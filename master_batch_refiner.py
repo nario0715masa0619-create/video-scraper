@@ -169,7 +169,8 @@ class MasterBatchRefiner:
                 "-vsync", "vfr", os.path.join(frames_dir, "frame_%04d.jpg"), "-f", "null", "-"
             ]
             
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True,
+                                    encoding='utf-8', errors='replace', timeout=600)
             
             if result.returncode != 0:
                 logger.warning(f"FFmpeg stderr: {result.stderr[:500]}")
