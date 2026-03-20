@@ -1,0 +1,7 @@
+openai-whisper
+easyocr
+torch
+torchvision
+torchaudio
+opencv-python
+numpy

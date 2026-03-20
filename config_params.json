@@ -1,0 +1,26 @@
+{
+  "FFmpeg_Extraction": {
+    "scene_threshold": 0.1,
+    "vsync_mode": "vfr",
+    "output_format": "jpg",
+    "description": "スライドの変化点を 0.1 以上の差分で検出。無駄な中間フレームを排除し、トピックの境界のみを抽出。"
+  },
+  "EasyOCR_Settings": {
+    "languages": ["ja", "en"],
+    "gpu_usage": false,
+    "confidence_threshold": 0.5,
+    "description": "日本語・英語を同時認識。UIノイズが多い操作画面でも、確実なキーワードのみを拾うための確信度設定。"
+  },
+  "Mud_Filter_Config": {
+    "regex_pattern": "[^\\s\\w]|[\\w]+",
+    "min_word_length": 2,
+    "excluded_vocab_count": 22,
+    "description": "ブラウザUI要素やパス情報を沈殿させ、商用価値のあるテキストのみを上澄みとして抽出。"
+  },
+  "Purity_Score_Algorithm": {
+    "audio_weight": 0.6,
+    "visual_weight": 0.4,
+    "core_keywords": ["再出品", "注意", "禁止", "即座に", "修正", "規約"],
+    "mud_penalty_factor": "if mud > 2 then penalty 80%"
+  }
+}
