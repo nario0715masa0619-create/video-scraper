@@ -339,7 +339,16 @@ if __name__ == "__main__":
         input_target = os.path.basename(sys.argv[1])
         targets = [input_target]
     else:
-        targets = sorted([f for f in os.listdir(v_dir) if not f.startswith("01_") and f.endswith(".mp4")])
+        all_mp4 = sorted([f for f in os.listdir(v_dir) if f.endswith(".mp4")])
+        targets = [
+            f for f in all_mp4
+            if not os.path.exists(
+                os.path.join(a_dir, f"Mk2_Core_{f.split('_')[0]}.json")
+            )
+        ]
+        skipped = len(all_mp4) - len(targets)
+        if skipped > 0:
+            logger.info(f"Skipped {skipped} already-processed video(s) (Mk2_Core_*.json exists)")
     logger.info(f"Found {len(targets)} videos to process")
     
     success_count = 0
