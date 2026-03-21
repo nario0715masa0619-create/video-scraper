@@ -133,10 +133,26 @@ class VideoDownloader:
         """
         Chrome をリモートデバッグポート 9222 で起動する。
         成功時 True、失敗時 False を返す。
-        （実装は #005-B）
         """
-        logger.info("[STUB] launch_chrome() - 実装予定 (#005-B)")
-        return True
+        if not self.chrome_path:
+            logger.error("Chrome が見つかりません。インストール状況を確認してください。")
+            return False
+
+        logger.info(f"Chrome を CDP モードで起動します: {self.chrome_path}")
+        try:
+            self.chrome_proc = subprocess.Popen([
+                self.chrome_path,
+                "--remote-debugging-port=9222",
+                f"--user-data-dir={CHROME_USER_DATA}",
+                "--no-first-run",
+                UTAGE_COURSE_URL
+            ])
+            time.sleep(5)  # Chrome 起動待機
+            logger.info("Chrome 起動完了。ログイン待機中...")
+            return True
+        except Exception as e:
+            logger.error(f"Chrome 起動失敗: {e}")
+            return False
 
     # --------------------------------------------------
     # Step B: UTAGE レッスンリンク収集
@@ -145,24 +161,115 @@ class VideoDownloader:
         """
         Playwright で UTAGE コースページを解析し、
         レッスンリンクのタイトルと URL を返す。
-        戻り値: [{"title": str, "lesson_url": str}, ...]
-        （実装は #005-B）
         """
-        logger.info("[STUB] collect_lesson_links() - 実装予定 (#005-B)")
-        return []
+        from playwright.sync_api import sync_playwright
+
+        lessons = []
+        try:
+            with sync_playwright() as p:
+                logger.info("Playwright で Chrome に接続します...")
+                browser = p.chromium.connect_over_cdp("http://localhost:9222")
+                page = browser.contexts[0].pages[0]
+                page.bring_to_front()
+
+                print("\n" + "=" * 50)
+                print("🔑 UTAGE にログインして、コース一覧画面を表示してください。")
+                print("   準備ができたら Enter を押してください。")
+                print("=" * 50)
+                input()
+
+                # レッスンリンクを取得
+                page.wait_for_selector(
+                    'a:has-text("受講する"), a:has-text("視聴する")',
+                    timeout=15000
+                )
+                links = page.locator(
+                    'a:has-text("受講する"), a:has-text("視聴する")'
+                ).all()
+
+                logger.info(f"{len(links)} 件のレッスンリンクを検出しました。")
+
+                new_page = browser.contexts[0].new_page()
+                for i, link in enumerate(links):
+                    try:
+                        # タイトル取得
+                        title_raw = link.evaluate(
+                            "node => node.closest('tr')?.innerText || node.innerText"
+                        )
+                        title = re.sub(
+                            r'[\\/:*?"<>|]', "_",
+                            title_raw.split('\n')[0]
+                                .replace("受講する", "")
+                                .replace("視聴する", "")
+                                .strip()
+                        )
+                        # URL 取得
+                        href = link.get_attribute("href")
+                        if not href:
+                            continue
+                        full_url = (
+                            href if href.startswith("http")
+                            else f"https://utage-system.com{href}"
+                        )
+                        lessons.append({"title": title, "lesson_url": full_url})
+                        logger.info(f"  [{i+1}/{len(links)}] {title}")
+                    except Exception as e:
+                        logger.warning(f"  [{i+1}] リンク解析スキップ: {e}")
+                        continue
+
+                # URL 抽出も同一セッションで実施
+                for lesson in lessons:
+                    url = self._extract_video_url_in_session(new_page, lesson["lesson_url"])
+                    if url:
+                        lesson["url"] = url
+                    else:
+                        lesson["url"] = None
+
+                new_page.close()
+                logger.info(f"レッスンリンク収集完了: {len(lessons)} 件")
+
+        except Exception as e:
+            logger.error(f"collect_lesson_links 失敗: {e}")
+
+        return lessons
 
     # --------------------------------------------------
     # Step C: iframe から動画 URL 抽出
     # --------------------------------------------------
-    def extract_video_url(self, lesson_url: str) -> str | None:
+    def _extract_video_url_in_session(self, page, lesson_url: str) -> str | None:
         """
-        レッスンページの iframe src を解析し、
-        Loom または YouTube の動画 URL を返す。
-        見つからない場合は None を返す。
-        （実装は #005-B）
+        既存の Playwright ページオブジェクトを使って
+        レッスンページの iframe から動画 URL を取得する。
+        （collect_lesson_links() の内部から呼ばれる）
         """
-        logger.info(f"[STUB] extract_video_url({lesson_url}) - 実装予定 (#005-B)")
-        return None
+        try:
+            page.goto(lesson_url, wait_until="networkidle", timeout=30000)
+            time.sleep(2)
+
+            iframes = page.locator('iframe').all()
+            for frame in iframes:
+                src = frame.get_attribute("src")
+                if not src:
+                    continue
+
+                if "loom.com" in src:
+                    url = src.replace("/embed/", "/share/").split("?")[0]
+                    logger.info(f"    Loom URL: {url}")
+                    return url
+
+                if "youtube.com" in src or "youtu.be" in src:
+                    m = re.search(r'embed/([^/?]+)', src)
+                    if m:
+                        url = f"https://www.youtube.com/watch?v={m.group(1)}"
+                        logger.info(f"    YouTube URL: {url}")
+                        return url
+
+            logger.warning(f"    動画 URL なし: {lesson_url}")
+            return None
+
+        except Exception as e:
+            logger.error(f"    URL 抽出失敗: {e}")
+            return None
 
     # --------------------------------------------------
     # Step D: video_list.txt 保存
@@ -171,9 +278,14 @@ class VideoDownloader:
         """
         self.video_list を VIDEO_LIST_FILE に
         「タイトル###URL」形式で保存する。
-        （実装は #005-B）
         """
-        logger.info("[STUB] save_video_list() - 実装予定 (#005-B)")
+        try:
+            with open(VIDEO_LIST_FILE, "w", encoding="utf-8") as f:
+                for item in self.video_list:
+                    f.write(f"{item['title']}###{item['url']}\n")
+            logger.info(f"video_list.txt 保存完了: {VIDEO_LIST_FILE} ({len(self.video_list)} 件)")
+        except Exception as e:
+            logger.error(f"save_video_list 失敗: {e}")
 
     # --------------------------------------------------
     # Step E: yt-dlp ダウンロード
@@ -182,10 +294,52 @@ class VideoDownloader:
         """
         self.video_list の全動画を yt-dlp でダウンロードする。
         出力ファイル名: {02d}_{タイトル}.mp4
-        失敗した動画は self.failed_list に記録する。
-        （実装は #005-B）
         """
-        logger.info("[STUB] download_all() - 実装予定 (#005-B)")
+        print("\n" + "!" * 50)
+        print("🚀 【重要】Chrome を完全に閉じてください！")
+        print("   閉じ終わったら Enter を押してダウンロードを開始します。")
+        print("!" * 50)
+        input()
+
+        # Chrome プロセスを終了
+        if self.chrome_proc:
+            self.chrome_proc.terminate()
+            logger.info("Chrome プロセスを終了しました。")
+
+        logger.info(f"ダウンロード開始: 合計 {len(self.video_list)} 本")
+
+        for i, item in enumerate(self.video_list, 1):
+            title = item["title"]
+            url   = item["url"]
+            filename = os.path.join(
+                VIDEOS_INPUT_DIR,
+                f"{i:02d}_{title}.mp4"
+            )
+
+            logger.info(f"[{i}/{len(self.video_list)}] ダウンロード開始: {title}")
+
+            cmd = [
+                "yt-dlp",
+                "--cookies-from-browser", f"chrome:{CHROME_USER_DATA}",
+                "--ffmpeg-location", FFMPEG_PATH,
+                "--recode-video", "mp4",
+                "--force-overwrites",
+                "--concurrent-fragments", "5",
+                "-o", filename,
+                url
+            ]
+
+            try:
+                subprocess.run(
+                    cmd,
+                    check=True,
+                    encoding="utf-8",
+                    errors="replace"
+                )
+                logger.info(f"  ✅ 完了: {filename}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"  ❌ 失敗: {title} - {e}")
+                self.failed_list.append(item)
 
     # --------------------------------------------------
     # 失敗リスト保存
@@ -194,9 +348,18 @@ class VideoDownloader:
         """
         ダウンロード失敗した動画を
         logs/failed_downloads.txt に記録する。
-        （実装は #005-B）
         """
-        logger.info("[STUB] save_failed_list() - 実装予定 (#005-B)")
+        failed_file = os.path.join(logs_dir, "failed_downloads.txt")
+        try:
+            with open(failed_file, "w", encoding="utf-8") as f:
+                for item in self.failed_list:
+                    f.write(f"{item['title']}###{item['url']}\n")
+            logger.warning(
+                f"失敗リストを保存しました: {failed_file} "
+                f"({len(self.failed_list)} 件)"
+            )
+        except Exception as e:
+            logger.error(f"save_failed_list 失敗: {e}")
 
     # --------------------------------------------------
     # メイン実行
@@ -216,23 +379,14 @@ class VideoDownloader:
 
         # B: レッスンリンク収集
         lessons = self.collect_lesson_links()
-        if not lessons:
+        lessons_with_url = [l for l in lessons if l.get("url")]
+        if not lessons_with_url:
             logger.error("レッスンリンクが見つかりませんでした。処理を中断します。")
             return
-        logger.info(f"レッスン数: {len(lessons)} 件")
+        logger.info(f"レッスン数: {len(lessons)} 件 / 動画URL取得: {len(lessons_with_url)} 件")
 
-        # C: 各レッスンから動画 URL 抽出
-        for lesson in lessons:
-            url = self.extract_video_url(lesson["lesson_url"])
-            if url:
-                self.video_list.append({
-                    "title": lesson["title"],
-                    "url":   url
-                })
-            else:
-                logger.warning(f"動画URLが見つかりませんでした: {lesson['title']}")
-
-        logger.info(f"動画URL取得: {len(self.video_list)} 件 / {len(lessons)} 件")
+        # C: video_list に反映（collect_lesson_links 内で URL 取得済み）
+        self.video_list = lessons_with_url
 
         # D: video_list.txt 保存
         self.save_video_list()
