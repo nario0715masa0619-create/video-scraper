@@ -1,24 +1,42 @@
 import os
 import sqlite3
 import json
+import time
 import logging
 import sys
 import io
+from datetime import datetime
+from dotenv import load_dotenv
 import google.generativeai as genai
+
+# .env ファイルをロード
+load_dotenv()
 
 # UTF-8 without BOM 出力を徹底
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logs_dir = os.getenv("LOGS_DIR", "./logs")
+os.makedirs(logs_dir, exist_ok=True)
+log_file = os.path.join(logs_dir, f"antigravity_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s - %(message)s')
+file_handler = logging.FileHandler(log_file, encoding='utf-8')
+file_handler.setFormatter(formatter)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+
+logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
 logger = logging.getLogger(__name__)
+logger.info(f"Log file: {log_file}")
+
 
 # --- Gemini API 設定 ---
-API_KEY = "AIzaSyCaJoTN7Q0kYA_lFAj3dakVHdSTu3XHLEo"
-MODEL_ID = "gemini-3-pro-preview"
+API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-3-pro-preview")
+
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY は .env ファイルで設定されている必要があります。")
+
 genai.configure(api_key=API_KEY)
 
 class TotalEvidenceIntegrator:
@@ -38,6 +56,25 @@ class TotalEvidenceIntegrator:
                 "temperature": 0.2
             }
         )
+
+    def _call_gemini_with_retry(self, prompt, max_retries=3, initial_wait=2):
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Gemini API call (attempt {attempt + 1}/{max_retries})...")
+                start_time = time.time()
+                response = self.gen_model.generate_content(prompt)
+                elapsed_time = time.time() - start_time
+                logger.info(f"Gemini API response received in {elapsed_time:.2f}s")
+                return response
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed ({type(e).__name__}): {str(e)[:200]}")
+                if attempt < max_retries - 1:
+                    wait_time = initial_wait * (2 ** attempt)
+                    logger.info(f"Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"All {max_retries} attempts failed.")
+                    raise
 
     def consolidate_memory(self):
         """Step 1: 物理統合 (Memory Consolidation)"""
@@ -118,7 +155,7 @@ class TotalEvidenceIntegrator:
         
         logger.info("Gemini 3 Proへプロンプトを送信中。推論には数十分かかる場合があります...")
         try:
-            response = self.gen_model.generate_content(prompt)
+            response = self._call_gemini_with_retry(prompt)
             print("Neural Network API Response Received Successfully")
             
             network_edges = json.loads(response.text)
@@ -169,6 +206,6 @@ class TotalEvidenceIntegrator:
         logger.info("全工程完了。「知識」と「神経」の統合が完了しました。")
 
 if __name__ == "__main__":
-    archive_dir = r"D:\Knowledge_Base\Brain_Marketing\archive"
+    archive_dir = os.getenv("ARCHIVE_OUTPUT_DIR", r"D:\Knowledge_Base\Brain_Marketing\archive")
     integrator = TotalEvidenceIntegrator(archive_dir)
     integrator.execute()
