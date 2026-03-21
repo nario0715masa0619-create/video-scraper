@@ -78,5 +78,30 @@ git pull origin main  # main の最新状態を取り込む
 
 git pull origin ai-dev
 
+---
+
+## GitHub Issue 運用ルール
+
+タスクの進捗管理は GitHub Issue で行う。
+各担当者はラベルを変更することで現在のステータスを示す。
+
+### フロー
+
+| ステップ | 担当 | アクション | ラベル |
+|---------|------|-----------|-------|
+| 1 | Genspark | Issue作成・指示書を本文に記載 | `task:genspark` |
+| 2 | Antigravity | 実装・push → Issueに「PR作成：#XX」コメント | `task:antigravity` |
+| 3 | Perplexity | PRにチェック結果をコメント | `review:git-ai` |
+| 4 | nario | 確認・マージ → Issueをクローズ | `status:done` |
+
+### ラベル一覧
+
+| ラベル名 | 意味 |
+|---------|------|
+| `task:genspark` | Genspark が指示書を作成・Issue オープン中 |
+| `task:antigravity` | Antigravity が実装中・PR作成済み |
+| `review:git-ai` | Perplexity がレビュー中 |
+| `status:done` | 完了・マージ済み |
+
 
 
