@@ -14,3 +14,7 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+
+# Step 0: Video Downloader 生成ファイル
+video_list.txt
+chrome_profile/
