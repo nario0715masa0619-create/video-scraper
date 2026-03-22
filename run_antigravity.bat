@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 > nul
 setlocal
 set VIDEO_PATH=%~1
 
@@ -9,8 +10,48 @@ if "%VIDEO_PATH%"=="" (
     exit /b 1
 )
 
-echo [Antigravity] 執行を開始します...
-python master_batch_refiner.py "%VIDEO_PATH%"
+echo ================================================================================
+echo  Antigravity Ver.1.0 - Full Pipeline
+echo ================================================================================
 
-echo [DONE] 処理が完了しました。
+echo.
+echo [Step 0] Video Downloader (UTAGE → yt-dlp)
+python video_downloader.py
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Step 0 failed. Aborting.
+    pause
+    exit /b 1
+)
+
+echo.
+echo [Step 1-4] Master Batch Refiner
+python master_batch_refiner.py "%VIDEO_PATH%"
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Step 1-4 failed. Aborting.
+    pause
+    exit /b 1
+)
+
+echo.
+echo [Step 5] Grand Master Integrator
+python grand_master_integrator.py
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Step 5 failed. Aborting.
+    pause
+    exit /b 1
+)
+
+echo.
+echo [Step 6] Total Evidence Integrator
+python total_evidence_integrator.py
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Step 6 failed. Aborting.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ================================================================================
+echo  All Steps Completed Successfully!
+echo ================================================================================
 pause
