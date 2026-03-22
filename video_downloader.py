@@ -320,7 +320,7 @@ class VideoDownloader:
 
             cmd = [
                 "yt-dlp",
-                "--cookies-from-browser", f"chrome:{CHROME_USER_DATA}",
+                "--cookies-from-browser", "firefox",
                 "--ffmpeg-location", FFMPEG_PATH,
                 "--recode-video", "mp4",
                 "--force-overwrites",
